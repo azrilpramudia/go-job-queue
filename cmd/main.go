@@ -1,26 +1,29 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log"
-	"log/slog"
-	"net/http"
+	"time"
+
+	"github.com/azrilpramudia/go-job-queue/internal/job"
+	"github.com/azrilpramudia/go-job-queue/internal/queue"
+	"github.com/azrilpramudia/go-job-queue/internal/worker"
 )
 
 func main() {
-	mux := http.NewServeMux()
+	q := queue.NewQueue(10)
+	pool := worker.NewPool(3, q)
+	pool.Start()
 
-	mux.HandleFunc("/", handleHello)
-
-	log.Fatal(http.ListenAndServe(":3000", mux))
-}
-
-func handleHello(w http.ResponseWriter, _ *http.Request) {
-	wc, err := w.Write([]byte("Hello, World!\n"))
-	if err != nil {
-		slog.Error("error writing response", "err", err)
-		return
+	for i := 1; i <= 5; i++ {
+		id := fmt.Sprintf("job-%d", i)
+		q.Push(job.NewJob(id, func(ctx context.Context) error{
+			time.Sleep(1 * time.Second)
+			return nil
+		}))
 	}
 
-	fmt.Printf("%d bytes written\n", wc)
+	q.Close()
+	pool.Wait()
+	fmt.Println("semua job selesai diproses")
 }
