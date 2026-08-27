@@ -1,6 +1,9 @@
 package job
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Status string
 
@@ -18,12 +21,14 @@ type Job struct {
 	Task		Task
 	Status 	Status
 	Err 		error
+	Timeout	time.Duration
 }
 
-func NewJob(id string, task Task) *Job {
+func NewJob(id string, task Task, timeout time.Duration) *Job {
 	return &Job{
 		ID:	id,
 		Task:	task,
 		Status:	StatusPending,
+		Timeout: timeout,
 	}
 }

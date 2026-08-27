@@ -13,12 +13,14 @@ type Pool struct {
 	workerCount int
 	queue 	*queue.Queue
 	wg sync.WaitGroup
+	ctx context.Context
 }
 
-func NewPool(workerCount int, q *queue.Queue) *Pool {
+func NewPool(workerCount int, q *queue.Queue, ctx context.Context) *Pool {
 	return &Pool{
 		workerCount: workerCount,
 		queue: q,
+		ctx: ctx,
 	}
 }
 
@@ -31,10 +33,11 @@ func (p *Pool) Start() {
 
 func (p *Pool) worker(id int) {
 	defer p.wg.Done()
-
 	for j := range p.queue.Pop() {
 		fmt.Printf("[worker %d] menjalankan job %s\n", id, j.ID)
-		err := j.Task(context.Background())
+		ctx, cancel := context.WithTimeout(p.ctx, j.Timeout)
+		err := j.Task(ctx)
+		cancel()
 		if err != nil {
 			j.Status = job.StatusFailed
 			j.Err = err
