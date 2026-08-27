@@ -3,17 +3,19 @@ package job_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/azrilpramudia/go-job-queue/internal/job"
 )
 
 func TestNewJob(t *testing.T) {
 	expectedID := "job-123"
+	expectedTimeout := 5 * time.Second
 	dummyTask := func(ctx context.Context) error {
 		return nil
 	}
 
-	j := job.NewJob(expectedID, dummyTask)
+	j := job.NewJob(expectedID, dummyTask, expectedTimeout)
 
 	if j == nil {
 		t.Fatal("Expected job to not be nil")
