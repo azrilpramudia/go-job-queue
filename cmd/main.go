@@ -26,6 +26,18 @@ func main() {
 	pool := worker.NewPool(3, q, workCtx)
 	pool.Start()
 
+	var flakyAttempts int
+	flaky := job.NewJob("flaky", func(ctx context.Context) error {
+		flakyAttempts++
+		if flakyAttempts < 3 {
+			return fmt.Errorf("gagal sementara (percobaan ke-%d)", flakyAttempts)
+		}
+		return nil
+	}, time.Second)
+	flaky.MaxRetries = 3
+	flaky.BaseDelay = 200 * time.Millisecond
+	q.Push(flaky)
+
 	go func() {
 		defer q.Close()
 		for i := 1; i <= 20; i++ {

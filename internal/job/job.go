@@ -18,13 +18,16 @@ const (
 type Task func(ctx context.Context) error
 
 type Job struct {
-	ID      string
-	Task    Task
-	Timeout time.Duration
+	ID         string
+	Task       Task
+	Timeout    time.Duration
+	MaxRetries int
+	BaseDelay  time.Duration
 
-	mu     sync.RWMutex
-	status Status
-	err    error
+	mu       sync.RWMutex
+	status   Status
+	err      error
+	attempts int
 }
 
 func NewJob(id string, task Task, timeout time.Duration) *Job {
@@ -65,4 +68,16 @@ func (j *Job) MarkFailed(err error) {
 	defer j.mu.Unlock()
 	j.status = StatusFailed
 	j.err = err
+}
+
+func (j *Job) Attempts() int {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.attempts
+}
+
+func (j *Job) IncAttempts() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.attempts++
 }

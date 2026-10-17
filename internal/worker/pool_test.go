@@ -74,6 +74,83 @@ func TestPool_JobResults(t *testing.T) {
 	}
 }
 
+func TestPool_RetryThenSuccess(t *testing.T) {
+	var calls atomic.Int32
+
+	q := queue.NewQueue(1)
+	pool := worker.NewPool(1, q, context.Background())
+	pool.Start()
+
+	j := job.NewJob("flaky", func(ctx context.Context) error {
+		if calls.Add(1) < 3 {
+			return errors.New("gagal sementara")
+		}
+		return nil
+	}, time.Second)
+	j.MaxRetries = 3
+	j.BaseDelay = time.Millisecond
+
+	q.Push(j)
+	q.Close()
+	pool.Wait()
+
+	if j.Status() != job.StatusDone {
+		t.Errorf("status = %v, want done", j.Status())
+	}
+	if j.Attempts() != 3 {
+		t.Errorf("attempts = %d, want 3", j.Attempts())
+	}
+}
+
+func TestPool_PermanentFailureAfterRetries(t *testing.T) {
+	q := queue.NewQueue(1)
+	pool := worker.NewPool(1, q, context.Background())
+	pool.Start()
+
+	j := job.NewJob("always-fails", func(ctx context.Context) error {
+		return errors.New("gagal permanen")
+	}, time.Second)
+	j.MaxRetries = 2
+	j.BaseDelay = time.Millisecond
+
+	q.Push(j)
+	q.Close()
+	pool.Wait()
+
+	if j.Status() != job.StatusFailed {
+		t.Errorf("status = %v, want failed", j.Status())
+	}
+	if j.Attempts() != 3 {
+		t.Errorf("attempts = %d, want 3", j.Attempts())
+	}
+}
+
+func TestPool_CanceledErrorIsNotRetried(t *testing.T) {
+	q := queue.NewQueue(1)
+	pool := worker.NewPool(1, q, context.Background())
+	pool.Start()
+
+	j := job.NewJob("canceled", func(ctx context.Context) error {
+		return context.Canceled
+	}, time.Second)
+	j.MaxRetries = 5
+	j.BaseDelay = time.Millisecond
+
+	q.Push(j)
+	q.Close()
+	pool.Wait()
+
+	if j.Status() != job.StatusFailed {
+		t.Errorf("status = %v, want failed", j.Status())
+	}
+	if !errors.Is(j.Err(), context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", j.Err())
+	}
+	if j.Attempts() != 1 {
+		t.Errorf("attempts = %d, want 1", j.Attempts())
+	}
+}
+
 func TestPool_ProcessesAllJobs(t *testing.T) {
 	const total = 50
 	var count atomic.Int64
@@ -109,6 +186,8 @@ func TestPool_ContextCancelStopsJobs(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}, time.Minute)
+	j.MaxRetries = 5
+	j.BaseDelay = time.Millisecond
 
 	q.Push(j)
 	q.Close()
@@ -127,6 +206,9 @@ func TestPool_ContextCancelStopsJobs(t *testing.T) {
 
 	if !errors.Is(j.Err(), context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", j.Err())
+	}
+	if j.Attempts() != 1 {
+		t.Errorf("attempts = %d, want 1", j.Attempts())
 	}
 }
 
