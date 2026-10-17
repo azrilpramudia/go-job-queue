@@ -139,3 +139,25 @@ func TestQueue_UnbufferedPushWaitsForPop(t *testing.T) {
 	}
 	q.Close()
 }
+
+func TestQueue_PushContextUnblocksWhenCanceled(t *testing.T) {
+	q := queue.NewQueue(1)
+	q.Push(newTestJob("full"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- q.PushContext(ctx, newTestJob("blocked"))
+	}()
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != context.Canceled {
+			t.Errorf("PushContext() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("PushContext() did not unblock after context cancellation")
+	}
+	q.Close()
+}

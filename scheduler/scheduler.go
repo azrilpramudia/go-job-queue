@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 
@@ -42,6 +42,9 @@ func (s *Scheduler) Schedule(expression string, spec pkg.JobSpec) (ScheduleID, e
 	if spec.Timeout <= 0 {
 		return 0, errors.New("job timeout must be greater than zero")
 	}
+	if s.client.PersistenceEnabled() && spec.TaskName == "" {
+		return 0, errors.New("persistent schedules require a registered task name")
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -53,7 +56,7 @@ func (s *Scheduler) Schedule(expression string, spec pkg.JobSpec) (ScheduleID, e
 		runSpec := spec
 		runSpec.ID = fmt.Sprintf("%s-%d", spec.ID, nextScheduledJob.Add(1))
 		if err := s.client.Submit(runSpec); err != nil {
-			log.Printf("scheduler: submit scheduled job %q: %v", runSpec.ID, err)
+			slog.Error("submit scheduled job", "job_id", runSpec.ID, "error", err)
 		}
 	})
 	if err != nil {

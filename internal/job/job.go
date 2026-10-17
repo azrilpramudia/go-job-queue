@@ -20,6 +20,8 @@ type Task func(ctx context.Context) error
 type Job struct {
 	ID         string
 	Task       Task
+	TaskName   string
+	Payload    []byte
 	Timeout    time.Duration
 	Priority   int
 	MaxRetries int
@@ -29,6 +31,7 @@ type Job struct {
 	status   Status
 	err      error
 	attempts int
+	finished time.Time
 }
 
 func NewJob(id string, task Task, timeout time.Duration) *Job {
@@ -62,6 +65,7 @@ func (j *Job) MarkDone() {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	j.status = StatusDone
+	j.finished = time.Now()
 }
 
 func (j *Job) MarkFailed(err error) {
@@ -69,6 +73,7 @@ func (j *Job) MarkFailed(err error) {
 	defer j.mu.Unlock()
 	j.status = StatusFailed
 	j.err = err
+	j.finished = time.Now()
 }
 
 func (j *Job) Attempts() int {
@@ -81,6 +86,31 @@ func (j *Job) Snapshot() (Status, error, int) {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
 	return j.status, j.err, j.attempts
+}
+
+func (j *Job) Restore(status Status, err error, attempts int) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.status = status
+	j.err = err
+	j.attempts = attempts
+	if status == StatusDone || status == StatusFailed {
+		j.finished = time.Now()
+	}
+}
+
+func (j *Job) FinishedAt() time.Time {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.finished
+}
+
+func (j *Job) ReleaseTaskData() {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.Task = nil
+	j.TaskName = ""
+	j.Payload = nil
 }
 
 func (j *Job) IncAttempts() {

@@ -2,6 +2,8 @@ package queue
 
 import (
 	"container/heap"
+	"context"
+	"errors"
 	"sync"
 
 	"github.com/azrilpramudia/go-job-queue/internal/job"
@@ -27,14 +29,33 @@ func NewQueue(bufferSize int) *Queue {
 }
 
 func (q *Queue) Push(j *job.Job) {
+	if err := q.PushContext(context.Background(), j); err != nil {
+		panic(err)
+	}
+}
+
+func (q *Queue) PushContext(ctx context.Context, j *job.Job) error {
+	if ctx == nil {
+		return errors.New("queue: context cannot be nil")
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	for !q.closed && q.isFull() {
+	stopWake := context.AfterFunc(ctx, func() {
+		q.mu.Lock()
+		q.cond.Broadcast()
+		q.mu.Unlock()
+	})
+	defer stopWake()
+
+	for !q.closed && q.isFull() && ctx.Err() == nil {
 		q.cond.Wait()
 	}
 	if q.closed {
-		panic("queue: push to closed queue")
+		return errors.New("queue: push to closed queue")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	heap.Push(&q.jobs, queuedJob{
@@ -44,6 +65,7 @@ func (q *Queue) Push(j *job.Job) {
 	})
 	q.nextSequence++
 	q.cond.Broadcast()
+	return nil
 }
 
 func (q *Queue) Pop() (*job.Job, bool) {
