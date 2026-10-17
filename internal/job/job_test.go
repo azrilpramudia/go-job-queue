@@ -23,8 +23,8 @@ func TestNewJob(t *testing.T) {
 	if j.ID != expectedID {
 		t.Errorf("Expected ID %s, got %s", expectedID, j.ID)
 	}
-	if j.Status != job.StatusPending {
-		t.Errorf("Expected status %v, got %v", job.StatusPending, j.Status)
+	if j.Status() != job.StatusPending {
+		t.Errorf("Expected status %v, got %v", job.StatusPending, j.Status())
 	}
 	if j.Task == nil {
 		t.Errorf("Expected Task to be assigned, got nil")
