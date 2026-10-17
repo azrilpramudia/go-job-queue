@@ -21,7 +21,11 @@ func TestQueue_FIFOOrder(t *testing.T) {
 	q.Close()
 
 	var got []string
-	for j := range q.Pop() {
+	for {
+		j, ok := q.Pop()
+		if !ok {
+			break
+		}
 		got = append(got, j.ID)
 	}
 
@@ -36,17 +40,48 @@ func TestQueue_FIFOOrder(t *testing.T) {
 	}
 }
 
+func TestQueue_PriorityOrder(t *testing.T) {
+	q := queue.NewQueue(4)
+
+	low := newTestJob("low")
+	normal := newTestJob("normal")
+	high := newTestJob("high")
+	alsoHigh := newTestJob("also-high")
+	low.Priority = -1
+	high.Priority = 10
+	alsoHigh.Priority = 10
+	q.Push(low)
+	q.Push(normal)
+	q.Push(high)
+	q.Push(alsoHigh)
+	q.Close()
+
+	var got []string
+	for {
+		j, ok := q.Pop()
+		if !ok {
+			break
+		}
+		got = append(got, j.ID)
+	}
+
+	want := []string{"high", "also-high", "normal", "low"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("position %d = %s, want %s", i, got[i], want[i])
+		}
+	}
+}
+
 func TestQueue_CloseEndsRange(t *testing.T) {
 	q := queue.NewQueue(1)
 	q.Close()
 
-	select {
-	case _, ok := <-q.Pop():
-		if ok {
-			t.Error("channel seharusnya sudah closed dan kosong")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Pop() hang padahal queue sudah ditutup")
+	if _, ok := q.Pop(); ok {
+		t.Error("Pop() should report closed and empty queue")
 	}
 }
 
@@ -66,10 +101,41 @@ func TestQueue_PushBlocksWhenFull(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	<-q.Pop()
+	if j, ok := q.Pop(); !ok || j.ID != "a" {
+		t.Fatalf("first Pop() = (%v, %t), want job a", j, ok)
+	}
 	select {
 	case <-pushed:
 	case <-time.After(time.Second):
 		t.Fatal("Push tidak lanjut setelah ada slot kosong")
 	}
+	if j, ok := q.Pop(); !ok || j.ID != "b" {
+		t.Fatalf("second Pop() = (%v, %t), want job b", j, ok)
+	}
+	q.Close()
+}
+
+func TestQueue_UnbufferedPushWaitsForPop(t *testing.T) {
+	q := queue.NewQueue(0)
+	pushed := make(chan struct{})
+	go func() {
+		q.Push(newTestJob("a"))
+		close(pushed)
+	}()
+
+	select {
+	case <-pushed:
+		t.Fatal("Push should wait until a Pop is ready")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if j, ok := q.Pop(); !ok || j.ID != "a" {
+		t.Fatalf("Pop() = (%v, %t), want job a", j, ok)
+	}
+	select {
+	case <-pushed:
+	case <-time.After(time.Second):
+		t.Fatal("Push did not complete after Pop")
+	}
+	q.Close()
 }

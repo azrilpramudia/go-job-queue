@@ -35,7 +35,11 @@ func backoff(base time.Duration, attempt int) time.Duration {
 
 func (p *Pool) worker(id int) {
 	defer p.wg.Done()
-	for j := range p.queue.Pop() {
+	for {
+		j, ok := p.queue.Pop()
+		if !ok {
+			return
+		}
 		fmt.Printf("[worker %d] menjalankan job %s\n", id, j.ID)
 		p.run(id, j)
 	}

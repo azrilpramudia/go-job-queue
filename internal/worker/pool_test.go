@@ -125,6 +125,45 @@ func TestPool_PermanentFailureAfterRetries(t *testing.T) {
 	}
 }
 
+func TestPool_RunsHigherPriorityJobsFirst(t *testing.T) {
+	q := queue.NewQueue(3)
+	order := make(chan string, 3)
+
+	for _, testJob := range []struct {
+		id       string
+		priority int
+	}{
+		{id: "low", priority: -1},
+		{id: "normal", priority: 0},
+		{id: "high", priority: 10},
+	} {
+		j := job.NewJob(testJob.id, func(ctx context.Context) error {
+			order <- testJob.id
+			return nil
+		}, time.Second)
+		j.Priority = testJob.priority
+		q.Push(j)
+	}
+	q.Close()
+
+	pool := worker.NewPool(1, q, context.Background())
+	pool.Start()
+	pool.Wait()
+	close(order)
+
+	want := []string{"high", "normal", "low"}
+	index := 0
+	for id := range order {
+		if id != want[index] {
+			t.Errorf("job %d = %s, want %s", index, id, want[index])
+		}
+		index++
+	}
+	if index != len(want) {
+		t.Errorf("processed %d jobs, want %d", index, len(want))
+	}
+}
+
 func TestPool_CanceledErrorIsNotRetried(t *testing.T) {
 	q := queue.NewQueue(1)
 	pool := worker.NewPool(1, q, context.Background())

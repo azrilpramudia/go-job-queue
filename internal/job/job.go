@@ -21,6 +21,7 @@ type Job struct {
 	ID         string
 	Task       Task
 	Timeout    time.Duration
+	Priority   int
 	MaxRetries int
 	BaseDelay  time.Duration
 
@@ -74,6 +75,12 @@ func (j *Job) Attempts() int {
 	j.mu.RLock()
 	defer j.mu.RUnlock()
 	return j.attempts
+}
+
+func (j *Job) Snapshot() (Status, error, int) {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.status, j.err, j.attempts
 }
 
 func (j *Job) IncAttempts() {
