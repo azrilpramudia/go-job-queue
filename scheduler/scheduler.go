@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,11 +16,11 @@ import (
 
 type ScheduleID uint64
 
-var nextScheduledJob atomic.Uint64
-
 type Scheduler struct {
-	client *pkg.Client
-	cron   *cron.Cron
+	client     *pkg.Client
+	cron       *cron.Cron
+	instanceID string
+	nextJobID  atomic.Uint64
 
 	mu      sync.Mutex
 	started bool
@@ -29,7 +31,15 @@ func New(client *pkg.Client) (*Scheduler, error) {
 	if client == nil {
 		return nil, errors.New("client cannot be nil")
 	}
-	return &Scheduler{client: client, cron: cron.New()}, nil
+	var instanceID [16]byte
+	if _, err := rand.Read(instanceID[:]); err != nil {
+		return nil, fmt.Errorf("generate scheduler instance ID: %w", err)
+	}
+	return &Scheduler{
+		client:     client,
+		cron:       cron.New(),
+		instanceID: hex.EncodeToString(instanceID[:]),
+	}, nil
 }
 
 func (s *Scheduler) Schedule(expression string, spec pkg.JobSpec) (ScheduleID, error) {
@@ -54,7 +64,7 @@ func (s *Scheduler) Schedule(expression string, spec pkg.JobSpec) (ScheduleID, e
 
 	id, err := s.cron.AddFunc(expression, func() {
 		runSpec := spec
-		runSpec.ID = fmt.Sprintf("%s-%d", spec.ID, nextScheduledJob.Add(1))
+		runSpec.ID = s.nextOccurrenceID(spec.ID)
 		if err := s.client.Submit(runSpec); err != nil {
 			slog.Error("submit scheduled job", "job_id", runSpec.ID, "error", err)
 		}
@@ -63,6 +73,10 @@ func (s *Scheduler) Schedule(expression string, spec pkg.JobSpec) (ScheduleID, e
 		return 0, fmt.Errorf("add cron schedule: %w", err)
 	}
 	return ScheduleID(id), nil
+}
+
+func (s *Scheduler) nextOccurrenceID(prefix string) string {
+	return fmt.Sprintf("%s-%s-%d", prefix, s.instanceID, s.nextJobID.Add(1))
 }
 
 func (s *Scheduler) Remove(id ScheduleID) {

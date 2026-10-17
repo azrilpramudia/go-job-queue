@@ -194,11 +194,11 @@ if err := client.CloseWithContext(stopCtx); err != nil {
 Cron definitions are application configuration; they are not stored in SQLite
 and must be registered again at startup. For persistent scheduled jobs, set
 `JobSpec.TaskName` and `JobSpec.Payload`, and register a resolver for that task.
-The scheduler's generated occurrence IDs are process-local; choose a unique
-schedule ID prefix when re-registering persistent schedules after a restart to
-avoid colliding with IDs from an earlier process. As with all recovered jobs,
-task side effects can be repeated after a crash; design handlers to be
-idempotent.
+The scheduler adds a cryptographically random, per-instance namespace and a
+monotonic sequence to each occurrence ID, so re-registering a schedule after a
+restart does not reuse the prior process's occurrence IDs. As with all
+recovered jobs, task side effects can be repeated after a crash; design handlers
+to be idempotent.
 
 ## HTTP API
 
